@@ -1,0 +1,273 @@
+﻿-- ==========================================
+--  меню 
+-- ==========================================
+if game.CoreGui:FindFirstChild("Rayfield") then
+    game.CoreGui.Rayfield:Destroy()
+end
+
+-- ==========================================
+-- СЕРВІСИ ТА ЗМІННІ
+-- ==========================================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local FlySpeed = 50
+local Flying = false
+local FlyLoop = nil
+local espEnabled = false
+local SelectedPlayer = nil
+
+-- ==========================================
+-- ЗАВАНТАЖЕННЯ БІБЛІОТЕКИ
+-- ==========================================
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "Corner | Hub",
+   LoadingTitle = "Завантаження системи...",
+   LoadingSubtitle = "by Damur1x",
+   ConfigurationSaving = {
+      Enabled = false,
+      FileName = "CornerHubSave"
+   },
+   KeySystem = false
+})
+
+-- ==========================================
+-- ВКЛАДКА 1: ГОЛОВНА
+-- ==========================================
+local MainTab = Window:CreateTab("Головна", 4483362458) 
+MainTab:CreateSection("Пересування")
+
+MainTab:CreateSlider({
+   Name = "Швидкість бігу",
+   Range = {16, 1000},
+   Increment = 1,
+   Suffix = " WalkSpeed",
+   CurrentValue = 16,
+   Flag = "SpeedSlider", 
+   Callback = function(Value)
+      if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+         LocalPlayer.Character.Humanoid.WalkSpeed = Value
+      end
+   end,
+})
+
+MainTab:CreateToggle({
+   Name = "Fly",
+   CurrentValue = false,
+   Flag = "FlyToggle",
+   Callback = function(Value)
+      Flying = Value
+      local char = LocalPlayer.Character
+      if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+      local hrp = char.HumanoidRootPart
+      
+      if Flying then
+         local bg = Instance.new("BodyGyro", hrp)
+         bg.Name = "FlyGyro"
+         bg.P = 9e4
+         bg.maxTorque = Vector3.new(9e9, 9e9, 9e9)
+         bg.cframe = hrp.CFrame
+         local bv = Instance.new("BodyVelocity", hrp)
+         bv.Name = "FlyVel"
+         bv.velocity = Vector3.new(0,0,0)
+         bv.maxForce = Vector3.new(9e9, 9e9, 9e9)
+         char.Humanoid.PlatformStand = true
+         
+         FlyLoop = RunService.RenderStepped:Connect(function()
+            if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+            bg.cframe = Camera.CFrame
+            local moveDir = Vector3.new(0,0,0)
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Camera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.RightVector end
+            bv.velocity = moveDir * FlySpeed
+         end)
+      else
+         if hrp:FindFirstChild("FlyGyro") then hrp.FlyGyro:Destroy() end
+         if hrp:FindFirstChild("FlyVel") then hrp.FlyVel:Destroy() end
+         if char:FindFirstChild("Humanoid") then
+            char.Humanoid.PlatformStand = false
+         end
+         if FlyLoop then FlyLoop:Disconnect(); FlyLoop = nil end
+      end
+   end,
+})
+
+MainTab:CreateSlider({
+   Name = "Швидкість польоту",
+   Range = {10, 1000},
+   Increment = 5,
+   CurrentValue = 50,
+   Flag = "FlySpeed",
+   Callback = function(Value)
+      FlySpeed = Value
+   end,
+})
+
+MainTab:CreateSection("Система")
+
+MainTab:CreateButton({
+   Name = "Увімкнути Anti-AFK",
+   Callback = function()
+      local vu = game:GetService("VirtualUser")
+      LocalPlayer.Idled:Connect(function()
+         vu:Button2Down(Vector2.new(0,0), Camera.CFrame)
+         task.wait(1)
+         vu:Button2Up(Vector2.new(0,0), Camera.CFrame)
+      end)
+      Rayfield:Notify({
+          Title = "Corner",
+          Content = "Anti-AFK включено",
+          Duration = 5,
+          Image = 4483362458,
+      })
+   end,
+})
+
+-- ==========================================
+-- ВКЛАДКА 2: ГРАВЦІ (Нова вкладка для вибору людей)
+-- ==========================================
+local PlayerTab = Window:CreateTab("Гравці", 4483362458)
+
+-- Функція для отримання імен всіх гравців
+local function GetPlayerNames()
+    local names = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(names, player.Name)
+        end
+    end
+    return names
+end
+
+local PlayerDropdown = PlayerTab:CreateDropdown({
+   Name = "Виберіть гравця",
+   Options = GetPlayerNames(),
+   CurrentOption = "",
+   MultipleOptions = false,
+   Flag = "PlayerDropdown",
+   Callback = function(Option)
+      SelectedPlayer = Option[1]
+   end,
+})
+
+-- Кнопка оновлення списку
+PlayerTab:CreateButton({
+   Name = "Оновити список гравців",
+   Callback = function()
+      PlayerDropdown:Refresh(GetPlayerNames())
+      Rayfield:Notify({Title = "Оновлено", Content = "Список гравців оновлено!", Duration = 2})
+   end,
+})
+
+-- Кнопка телепорту до вибраного
+PlayerTab:CreateButton({
+   Name = "Телепортуватися до гравця",
+   Callback = function()
+      if SelectedPlayer then
+         local targetPlayer = Players:FindFirstChild(SelectedPlayer)
+         if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+               -- Телепортуємо себе за спину цілі
+               LocalPlayer.Character.HumanoidRootPart.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
+            end
+         end
+      else
+         Rayfield:Notify({Title = "Помилка", Content = "Спочатку виберіть гравця!", Duration = 3})
+      end
+   end,
+
+local IsSpectating = false
+TabSoft:CreateToggle({
+   Name = "Спостерігати (Spectate)",
+   CurrentValue = false,
+   Flag = "SpectateToggle",
+   Callback = function(Value)
+      IsSpectating = Value
+      if IsSpectating and SelectedPlayerName and SelectedPlayerName ~= "Немає гравців" then
+         local target = Players:FindFirstChild(SelectedPlayerName)
+         if target and target.Character and target.Character:FindFirstChild("Humanoid") then
+            Camera.CameraSubject = target.Character.Humanoid
+         end
+      else
+         if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            Camera.CameraSubject = LocalPlayer.Character.Humanoid
+         end
+      end
+   end
+})
+
+-- ==========================================
+-- ВКЛАДКА 3: ВІЗУАЛИ ТА ПЕРСОНАЖ (Невидимка + ESP)
+-- ==========================================
+local VisualTab = Window:CreateTab("Візуали", 4483362458)
+VisualTab:CreateSection("Ваш персонаж")
+
+-- НЕВИДИМКА
+VisualTab:CreateToggle({
+   Name = "Невидимка (Invisibility)",
+   CurrentValue = false,
+   Flag = "InvisToggle",
+   Callback = function(Value)
+      local char = LocalPlayer.Character
+      if char then
+         for _, part in ipairs(char:GetDescendants()) do
+            -- Робимо прозорими всі деталі тіла та аксесуари (крім HumanoidRootPart)
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+               part.Transparency = Value and 1 or 0
+            elseif part:IsA("Decal") then -- Для обличчя
+               part.Transparency = Value and 1 or 0
+            end
+         end
+      end
+   end,
+})
+
+VisualTab:CreateSection("ESP (Бачення крізь стіни)")
+
+local function applyESP(character)
+    if not character:FindFirstChild("HubESP") then
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "HubESP"
+        highlight.FillColor = Color3.fromRGB(255, 0, 0)
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        highlight.FillTransparency = 0.5
+        highlight.Parent = character
+    end
+end
+
+VisualTab:CreateToggle({
+   Name = "Підсвітка гравців (Highlight)",
+   CurrentValue = false,
+   Flag = "ESPToggle",
+   Callback = function(Value)
+      espEnabled = Value
+      for _, player in pairs(Players:GetPlayers()) do
+         if player ~= LocalPlayer and player.Character then
+            if espEnabled then
+               applyESP(player.Character)
+            else
+               if player.Character:FindFirstChild("HubESP") then
+                  player.Character.HubESP:Destroy()
+               end
+            end
+         end
+      end
+   end,
+})
+
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function(character)
+        if espEnabled then
+            task.wait(1)
+            applyESP(character)
+        end
+    end)
+end)
+-- Поки всьо на тому 
